@@ -38,6 +38,12 @@
 #define CAL_MIN           (-10000.0f)
 #define CAL_MAX           ( 10000.0f)
 
+// ===== Calibración por defecto =====
+// 115000 raw = 279 g
+#define DEFAULT_CAL_RAW     115200.0f
+#define DEFAULT_CAL_GRAMS   279.0f
+#define DEFAULT_CAL_FACTOR  (DEFAULT_CAL_RAW / DEFAULT_CAL_GRAMS)
+
 // ===== Arcade =====
 #define LED_ARCD          14
 #define PUL_ARCD          25
@@ -59,3 +65,36 @@
 
 // ===== POST samples HX711 =====
 #define POST_SAMPLES 10   // recomendado 8–15 (30 tarda MUCHO en 10Hz)
+
+// =======================================================
+// ===================== COLORES =========================
+// =======================================================
+// ST7735 usa RGB565 (16-bit). Convertimos desde RGB(0-255).
+#ifndef RGB565
+  #define RGB565(r,g,b) ( (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)) )
+#endif
+
+// Semánticos
+#ifndef COLOR_OK
+  #define COLOR_OK    RGB565(0, 255, 0)      // verde
+#endif
+
+#ifndef COLOR_WARN
+  #define COLOR_WARN  RGB565(255, 200, 0)    // amarillo/anaranjado visible
+#endif
+
+#ifndef COLOR_ERROR
+  #define COLOR_ERROR RGB565(255, 0, 0)      // rojo
+#endif
+
+#ifndef COLOR_INFO
+  #define COLOR_INFO  RGB565(0, 200, 255)    // celeste
+#endif
+
+#ifndef COLOR_TEXT
+  #define COLOR_TEXT  RGB565(255, 255, 255)  // blanco
+#endif
+
+#ifndef COLOR_BG
+  #define COLOR_BG    RGB565(0, 0, 0)        // negro
+#endif

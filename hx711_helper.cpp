@@ -24,10 +24,10 @@ HX711 scale;
 // Factor de calibración global (declarado en hx711_helper.h)
 volatile float CAL_FACTOR = 1.0f;
 
-static bool   g_initialized      = false;
-static bool   g_calibrating      = false;
-static float  g_lastWeightGrams  = 0.0f;
-static float  g_calTargetGrams   = 0.0f;
+static bool   g_initialized       = false;
+static bool   g_calibrating       = false;
+static float  g_lastWeightGrams   = 0.0f;
+static float  g_calTargetGrams    = 0.0f;
 static unsigned long g_lastPollMs = 0;
 
 // =========================
@@ -92,8 +92,9 @@ void setupHX711() {
 
   scale.begin(PIN_DT, PIN_SCK);
 
-  // Arrancamos con factor 1.0 hasta calibrar
-  CAL_FACTOR = 1.0f;
+  // ✅ Arranca con calibración por default (115000 = 279g)
+  // Esto NO rompe tu calibración manual: si calibrás, se recalcula y se pisa.
+  CAL_FACTOR = (float)DEFAULT_CAL_FACTOR;
   applyScaleToDevice();
 
   // Tare inicial con la balanza vacía
@@ -101,6 +102,8 @@ void setupHX711() {
   g_initialized = true;
 
   Serial.println("[HX711] Tare OK, balanza lista");
+  Serial.print("[HX711] Default CAL_FACTOR (boot) = ");
+  Serial.println(CAL_FACTOR, 6);
 }
 
 void updateWeight() {
