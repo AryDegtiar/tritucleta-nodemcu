@@ -92,7 +92,36 @@ static void handleEncoderClick() {
 }
 
 static void updateUiAndPeripherals() {
+  static bool prevFlashing = false;
+
+  // 1) avanza el flash
+  flashTick();
+  bool flashingNow = isFlashing();
+
+  // 2) si terminó el flash JUSTO ahora -> redibujá todo
+  if (prevFlashing && !flashingNow) {
+    // header
+    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
+
+    // si tu updateWeight() redraw solo el body/peso, llamalo
+    updateWeight();
+
+    // opcional: status “Listo”
+    // showStatus("Listo", COLOR_OK);
+  }
+
+  prevFlashing = flashingNow;
+
+  // 3) Mientras flashea: NO pises el body, pero mantené WiFi + LED vivos
+  if (flashingNow) {
+    updateWiFiStatus(); // mantiene estado wifi interno (si lo necesitás)
+    updateArcade();     // mantiene ledTick()
+    return;
+  }
+
+  // 4) Normal
   updateWiFiStatus();
   updateWeight();
   updateArcade();
 }
+

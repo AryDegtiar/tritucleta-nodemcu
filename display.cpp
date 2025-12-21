@@ -1,5 +1,6 @@
-#include "config.h"      // pines TFT y ROTATION
+#include "config.h"      // pines TFT y ROTATION + COLOR_OK/COLOR_ERROR/COLOR_WARN
 #include "display.h"
+
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
@@ -29,12 +30,65 @@ static Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
 // ===== Layout =====
 static const int HEADER_H = 18;
 
+// ===== Colores “seguros” (para evitar rojo->azul por BGR/RGB) =====
+static uint16_t COL_OK  = 0;
+static uint16_t COL_ERR = 0;
+static uint16_t COL_TXT = 0;
+
+uint16_t displayOkColor()  { return COL_OK; }
+uint16_t displayErrColor() { return COL_ERR; }
+
+// ===== FLASH NO BLOQUEANTE =====
+static bool g_flashing = false;
+static unsigned long g_flashUntilMs = 0;
+
+bool isFlashing() { return g_flashing; }
+
+static void drawFlashScreen(uint16_t color, const char* msg) {
+  tft.fillScreen(color);
+
+  tft.setTextWrap(false);
+  tft.setTextSize(3);
+  tft.setTextColor(COL_TXT);
+
+  int16_t x1, y1; uint16_t w, h;
+  tft.getTextBounds(msg, 0, 0, &x1, &y1, &w, &h);
+  int cx = (160 - (int)w) / 2; if (cx < 0) cx = 0;
+  int cy = (80  - (int)h) / 2; if (cy < 0) cy = 0;
+
+  tft.setCursor(cx, cy);
+  tft.print(msg);
+}
+
+void flashStart(uint16_t color, const char* msg, uint16_t durationMs) {
+  g_flashing = true;
+  g_flashUntilMs = millis() + durationMs;
+  drawFlashScreen(color, msg);
+}
+
+void flashTick() {
+  if (!g_flashing) return;
+
+  if ((long)(millis() - g_flashUntilMs) < 0) return;
+
+  // terminó flash -> limpiamos a negro.
+  // Header/peso/status se vuelven a dibujar por tu loop normal.
+  g_flashing = false;
+  tft.fillScreen(ST77XX_BLACK);
+}
+
+// ===== Init =====
 void displayInit() {
   SPI.begin(TFT_SCLK, -1 /*MISO no usado*/, TFT_MOSI, TFT_CS);
   tft.initR(INITR_MINI160x80);   // 80x160
   tft.setRotation(TFT_ROTATION);
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextWrap(false);
+
+  // Colores “reales” asegurados
+  COL_OK  = tft.color565(0, 255, 0);   // verde
+  COL_ERR = tft.color565(255, 0, 0);   // rojo
+  COL_TXT = tft.color565(0, 0, 0);     // negro
 }
 
 // ==== HEADER WIFI ====
@@ -51,8 +105,8 @@ void drawHeaderWiFi(WifiUiState state, const char* ssid, const char* ip) {
   // Estado con color
   uint16_t col = COLOR_WARN;
   const char* txt = "Conectando";
-  if (state == WIFI_CONNECTED)   { col = COLOR_OK;    txt = "Conectado";   }
-  if (state == WIFI_DISCONNECTED){ col = COLOR_ERROR; txt = "Desconectado";}
+  if (state == WIFI_CONNECTED)    { col = COLOR_OK;    txt = "Conectado";    }
+  if (state == WIFI_DISCONNECTED) { col = COLOR_ERROR; txt = "Desconectado"; }
 
   tft.setTextColor(col);
   tft.print(txt);
@@ -64,15 +118,8 @@ void drawHeaderWiFi(WifiUiState state, const char* ssid, const char* ip) {
     tft.print(ssid);
   }
 
-  // IP (solo si conectado y disponible)
-  if (state == WIFI_CONNECTED && ip && ip[0]) {
-    tft.setTextColor(ST77XX_YELLOW);
-    // Imprimir IP al borde derecho (simple: en la línea de estado)
-    // Para pantallas pequeñas priorizamos que se vea "Conectado"
-    // Podés mover esto a showStatus si preferís.
-    // Aquí la mostramos en la línea inferior de estado:
-    // (no hacemos nada aquí, se puede mostrar con showStatus)
-  }
+  // IP opcional (si algún día la querés imprimir)
+  (void)ip;
 }
 
 // ==== CUERPO PRINCIPAL (peso) ====
@@ -81,7 +128,7 @@ void showWeight(float grams) {
   tft.fillRect(0, 28, 160, 52, ST77XX_BLACK);
 
   tft.setTextColor(ST77XX_WHITE);
-  tft.setTextSize(2);
+  tft.setTextSize(3);
 
   char buf[24];
   snprintf(buf, sizeof(buf), "%.1f g", grams);
