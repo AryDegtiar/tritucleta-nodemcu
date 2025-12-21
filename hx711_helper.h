@@ -14,3 +14,5 @@ bool isCalibrating();
 void enterCalibrationMode();
 void calibrationAdjust(int16_t steps);
 bool calibrationConfirm();
+
+float readWeightForPost(uint8_t samples = 20);

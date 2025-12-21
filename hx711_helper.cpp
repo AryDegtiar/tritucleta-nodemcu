@@ -218,3 +218,18 @@ bool calibrationConfirm() {
 
   return true;
 }
+
+// =====================================================
+// Lectura estable para POST (promedia varias muestras)
+// =====================================================
+float readWeightForPost(uint8_t samples) {
+  if (!g_initialized) return 0.0f;
+  if (samples == 0) samples = 1;
+
+  // Leemos usando el CAL_FACTOR actual, pero con más muestras
+  float gramsRaw = scale.get_units(samples);
+  float grams    = sanitizeAndRoundUp(gramsRaw);
+
+  // NO tocamos la UI acá; solo devolvemos el valor.
+  return grams;
+}
