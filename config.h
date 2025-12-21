@@ -15,6 +15,7 @@
 
 // ===== Botón calibración =====
 #define PUL_CAL           19
+#define CAL_HOLD_MS       1000
 
 // ===== Encoder =====
 #define ENC_CLK           32
@@ -41,11 +42,20 @@
 #define LED_ARCD          14
 #define PUL_ARCD          25
 
-#define BLINK_INTERVAL_MS 200
-#define DEBOUNCE_MS       20
+#define DEBOUNCE_MS       20   // solo para "soltar estable" (tap queda instantáneo)
+#define LED_BLINK_POST_MS 150  // titilar mientras lee/postea
+#define LED_BLINK_ERR_MS  40   // (ya no se usa) antes era blink error
+#define LED_ERR_TOTAL_MS  5000 // 5 segundos
 
 // ===== Wi-Fi =====
 #define WIFI_SSID     "Servicio de Interpol-2.4GHz"
 #define WIFI_PASS     "tegarquevecino"
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define WIFI_RECHECK_MS          2000
+
+// ===== Backend =====
+#define POST_URL "http://192.168.1.12:8080/v1/weight"
+#define HTTP_TIMEOUT_MS 5000
+
+// ===== POST samples HX711 =====
+#define POST_SAMPLES 10   // recomendado 8–15 (30 tarda MUCHO en 10Hz)

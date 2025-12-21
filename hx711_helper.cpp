@@ -4,6 +4,13 @@
 #include <HX711.h>
 #include <math.h>
 
+// -----------------------------------------------------------------
+// Hook opcional para "ceder" CPU mientras esperamos al HX711.
+// Si otro módulo define hx711Yield(), se llamará dentro de waits
+// (por ejemplo, para mantener titileo del LED durante un POST).
+// -----------------------------------------------------------------
+void __attribute__((weak)) hx711Yield() {}
+
 #ifndef POLL_MS
 #define POLL_MS 200UL
 #endif
@@ -127,16 +134,6 @@ void applyCalFactor(float cf) {
 // =========================
 // Calibración por gramos
 // =========================
-//
-// Flujo esperado REAL:
-// 1) Balanza vacía -> hacés TARE (al inicio ya se hace en setup).
-// 2) Ponés el peso conocido (ej: 240 g).
-// 3) Apretás botón CAL.
-// 4) Girás el encoder hasta que la pantalla marque ese peso (240 g).
-// 5) Click del encoder -> se calcula CAL_FACTOR a partir de get_value().
-//
-// A partir de ahí, get_units() ≈ gramos reales.
-//
 
 bool isCalibrating() {
   return g_calibrating;
@@ -219,17 +216,36 @@ bool calibrationConfirm() {
   return true;
 }
 
-// =====================================================
-// Lectura estable para POST (promedia varias muestras)
-// =====================================================
 float readWeightForPost(uint8_t samples) {
   if (!g_initialized) return 0.0f;
   if (samples == 0) samples = 1;
 
-  // Leemos usando el CAL_FACTOR actual, pero con más muestras
-  float gramsRaw = scale.get_units(samples);
-  float grams    = sanitizeAndRoundUp(gramsRaw);
+  // Promedio de N lecturas, esperando is_ready
+  double acc = 0.0;
+  uint8_t got = 0;
 
-  // NO tocamos la UI acá; solo devolvemos el valor.
-  return grams;
+  for (uint8_t i = 0; i < samples; i++) {
+    // esperar conversión HX711
+    unsigned long start = millis();
+    while (!scale.is_ready()) {
+      // no bloquear fuerte + permitir que otros módulos hagan "tick" (LED, UI, etc.)
+      hx711Yield();
+      delay(1);
+      if (millis() - start > 300) { // si un sample se cuelga, lo salteamos
+        break;
+      }
+    }
+    if (!scale.is_ready()) continue;
+
+    // get_value(1) = (read - offset) en counts
+    long raw = scale.get_value(1);
+    float gramsRaw = (CAL_FACTOR != 0.0f) ? ((float)raw / CAL_FACTOR) : 0.0f;
+    float grams = sanitizeAndRoundUp(gramsRaw);
+
+    acc += grams;
+    got++;
+  }
+
+  if (got == 0) return 0.0f;
+  return (float)(acc / (double)got);
 }
