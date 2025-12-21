@@ -48,13 +48,13 @@
 #define LED_ERR_TOTAL_MS  5000 // 5 segundos
 
 // ===== Wi-Fi =====
-#define WIFI_SSID     "Servicio de Interpol-2.4GHz"
-#define WIFI_PASS     "tegarquevecino"
+#define WIFI_SSID     "tritucleta_balanza"
+#define WIFI_PASS     "energiarenovable"
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define WIFI_RECHECK_MS          2000
 
 // ===== Backend =====
-#define POST_URL "http://192.168.1.12:8080/v1/weight"
+#define POST_URL "http://192.168.0.22:8080/v1/weight"
 #define HTTP_TIMEOUT_MS 5000
 
 // ===== POST samples HX711 =====
