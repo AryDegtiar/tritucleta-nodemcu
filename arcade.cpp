@@ -273,7 +273,7 @@ void updateArcade() {
   Serial.println(" g");
 
   String jsonBody = "{";
-  jsonBody += "\"evento\":\"PESO_TOMADO\",";
+  jsonBody += "\"event\":\"PESO_TOMADO\",";
   jsonBody += "\"weight\":" + String(weight, 1);
   jsonBody += "}";
 
