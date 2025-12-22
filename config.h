@@ -61,9 +61,9 @@
 
 // ===== Backend (3 endpoints) =====
 // OJO: el POST actual soporta http:// (no https://)
-#define URL_LOCAL "http://172.30.135.167:5000/api/weight/live"   // tu LAN “local”
-#define URL_DEV   "https://www.circoreciclado.com/api/weight/live"      // <- editá a tu gusto
-#define URL_PROD  "https://boceto-tritucleta-alealcontador.replit.app/api/weight/live"     // <- editá a tu gusto
+#define URL_LOCAL "http://192.168.1.62:5000/api/weight/live"   
+#define URL_DEV   "https://boceto-tritucleta-alealcontador.replit.app/api/weight/live"    
+#define URL_PROD  "https://www.circoreciclado.com/api/weight/live"  
 
 // Combo para entrar al menú de endpoints (ENC_SW + PUL_CAL)
 #define URL_MENU_HOLD_MS  400

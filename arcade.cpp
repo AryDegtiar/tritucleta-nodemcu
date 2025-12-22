@@ -6,6 +6,7 @@
 #include "url_helper.h"
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h> 
 
 // ======================
 // Estado LED
@@ -31,10 +32,20 @@ static unsigned long g_releaseStart = 0;
 // ======================
 // URL parser simple: http://host:port/path
 // ======================
-static bool parseHttpUrl(const char* url, String& host, uint16_t& port, String& path) {
+static bool parseUrl(const char* url,bool& isHttps,String& host,uint16_t& port,String& path) {
   String s(url);
-  if (!s.startsWith("http://")) return false;
-  s.remove(0, 7);
+  isHttps = false;
+
+  if (s.startsWith("http://")) {
+    s.remove(0, 7);
+    port = 80;
+  } else if (s.startsWith("https://")) {
+    s.remove(0, 8);
+    port = 443;
+    isHttps = true;
+  } else {
+    return false;
+  }
 
   int slash = s.indexOf('/');
   String hostport = (slash >= 0) ? s.substring(0, slash) : s;
@@ -46,8 +57,8 @@ static bool parseHttpUrl(const char* url, String& host, uint16_t& port, String& 
     port = (uint16_t)hostport.substring(colon + 1).toInt();
   } else {
     host = hostport;
-    port = 80;
   }
+
   return (host.length() > 0);
 }
 
@@ -168,20 +179,32 @@ static bool arcadePressedOnce() {
 static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
   String host, path;
   uint16_t port;
-  if (!parseHttpUrl(url, host, port, path)) {
-    Serial.println("[ARCADE] URL invalida (solo http://)");
+  bool isHttps;
+
+  if (!parseUrl(url, isHttps, host, port, path)) {
+    Serial.println("[ARCADE] URL invalida (http:// o https://)");
     return -1;
   }
 
-  WiFiClient client;
-  client.setTimeout(1);
+  WiFiClientSecure secure;
+  WiFiClient plain;
 
-  if (!client.connect(host.c_str(), port)) {
+  WiFiClient* client = nullptr;
+
+  if (isHttps) {
+    secure.setInsecure();   // ⚠️ luego lo cambiamos por CA
+    secure.setTimeout(1);
+    client = &secure;
+  } else {
+    plain.setTimeout(1);
+    client = &plain;
+  }
+
+  if (!client->connect(host.c_str(), port)) {
     Serial.println("[ARCADE] connect() fail");
     return -2;
   }
 
-  // request
   String req;
   req += "POST " + path + " HTTP/1.1\r\n";
   req += "Host: " + host + "\r\n";
@@ -190,9 +213,8 @@ static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
   req += "Content-Length: " + String(jsonBody.length()) + "\r\n\r\n";
   req += jsonBody;
 
-  client.print(req);
+  client->print(req);
 
-  // Leer status line char-by-char, tickeando LED siempre
   unsigned long start = millis();
   String statusLine;
   bool gotLine = false;
@@ -200,8 +222,8 @@ static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
   while (millis() - start < HTTP_TIMEOUT_MS) {
     ledTick();
 
-    while (client.available()) {
-      char c = (char)client.read();
+    while (client->available()) {
+      char c = (char)client->read();
       if (c == '\r') continue;
       if (c == '\n') { gotLine = true; break; }
       statusLine += c;
@@ -212,7 +234,7 @@ static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
     delay(1);
   }
 
-  client.stop();
+  client->stop();
 
   if (!gotLine || statusLine.length() == 0) {
     Serial.println("[ARCADE] timeout sin respuesta");
@@ -223,7 +245,6 @@ static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
   Serial.print("[ARCADE] statusLine: ");
   Serial.println(statusLine);
 
-  // parse "HTTP/1.1 200 OK"
   int sp1 = statusLine.indexOf(' ');
   if (sp1 < 0) return -4;
   int sp2 = statusLine.indexOf(' ', sp1 + 1);
