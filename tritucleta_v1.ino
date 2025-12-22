@@ -6,6 +6,18 @@
 #include "wifi_helper.h"
 #include "url_helper.h"
 
+// ================= helpers =================
+static const char* endpointLabel() {
+  // Fuente única de verdad
+  return urlGetLabel(urlGetIndex());
+}
+
+static void showReadyStatus() {
+  char st[24];
+  snprintf(st, sizeof(st), "Listo %s", endpointLabel());
+  showStatus(st, COLOR_OK);
+}
+
 // --------- forward declarations ----------
 static void initHardware();
 static void initWiFi();
@@ -19,22 +31,21 @@ static void updateUiAndPeripherals();
 void setup() {
   Serial.begin(115200);
   initHardware();
-  urlStoreBegin();   // ✅ carga idx guardado (NVS)
+  urlStoreBegin();   // carga endpoint REAL
   initWiFi();
 }
 
 void loop() {
   encoderTick();
 
-  // ✅ prioridad: combo ENC + CAL -> menú endpoints (bloqueante)
   handleUrlMenuCombo();
-
   handleCalibrationButton();
   handleEncoderTurn();
   handleEncoderClick();
   updateUiAndPeripherals();
 }
 
+// ================= init =================
 static void initHardware() {
   displayInit();
   setupHX711();
@@ -48,42 +59,30 @@ static void initWiFi() {
   setupWiFi(WIFI_SSID, WIFI_PASS);
 }
 
-// ==========================
-// Combo: ENC_SW + PUL_CAL
-// ==========================
+// ================= combo ENC + CAL =================
 static void handleUrlMenuCombo() {
-  static unsigned long bothStart = 0;
+  static unsigned long startMs = 0;
   static bool tracking = false;
 
-  bool encPressed = encoderPressed();                 // ya viene debounceado
-  bool calPressed = (digitalRead(PUL_CAL) == LOW);    // pullup
+  bool enc = encoderPressed();
+  bool cal = (digitalRead(PUL_CAL) == LOW);
 
-  if (encPressed && calPressed) {
+  if (enc && cal) {
     if (!tracking) {
       tracking = true;
-      bothStart = millis();
-      return;
-    }
-
-    if (millis() - bothStart >= URL_MENU_HOLD_MS) {
+      startMs = millis();
+    } else if (millis() - startMs >= URL_MENU_HOLD_MS) {
       tracking = false;
-      bothStart = 0;
-
-      // Entramos al menú (bloquea todo hasta confirmar)
       enterUrlMenuBlocking();
-
-      // al volver, evitamos clicks “fantasma”
       while (encoderClick()) {}
     }
   } else {
     tracking = false;
-    bothStart = 0;
   }
 }
 
-// Calibración con pulsación larga (si NO estás apretando el encoder)
+// ================= calibración =================
 static void handleCalibrationButton() {
-  // ✅ si el encoder está apretado, no queremos que dispare calibración (porque podría ser combo)
   if (encoderPressed()) return;
 
   static unsigned long pressStart = 0;
@@ -102,9 +101,8 @@ static void handleCalibrationButton() {
   }
 
   if (pressed && wasPressed && (now - pressStart >= CAL_HOLD_MS)) {
-    wasPressed = false; // evita múltiples entradas
+    wasPressed = false;
     enterCalibrationMode();
-    Serial.println("[MAIN] Calibración: enter (long press)");
   }
 }
 
@@ -116,7 +114,7 @@ static void handleEncoderTurn() {
     case ENC_LEFT:
       if (isCalibrating()) calibrationAdjust(-1);
       break;
-    case ENC_NONE:
+    default:
       break;
   }
 }
@@ -125,96 +123,82 @@ static void handleEncoderClick() {
   if (!encoderClick()) return;
 
   if (isCalibrating()) {
-    if (calibrationConfirm()) {
-      Serial.println("[MAIN] Calibración OK");
-    } else {
-      Serial.println("[MAIN] Calibración FAIL");
-    }
+    calibrationConfirm();
   } else {
     doTare();
   }
 }
 
-// ==========================
-// Menú endpoints (bloqueante)
-// ==========================
+// ================= menú endpoints =================
 static void enterUrlMenuBlocking() {
-  // armamos items para UI
   const uint8_t n = urlCount();
-  const char* items[3] = { nullptr, nullptr, nullptr };
-  for (uint8_t i = 0; i < n && i < 3; i++) items[i] = urlGetLabel(i);
+  const char* items[3];
 
-  int selected = (int)urlGetIndex();
+  for (uint8_t i = 0; i < n; i++) {
+    items[i] = urlGetLabel(i);
+  }
 
-  // Limpiamos eventos pendientes del encoder
-  while (encoderClick()) {}
+  int selected = urlGetIndex();
 
-  drawUrlMenu("endpoints", items, n, selected);
+  drawUrlMenu("ENDPOINT", items, n, selected);
 
-  // Bloquea el “programa normal” hasta confirmar
   while (true) {
     encoderTick();
-
-    // Podés mantener “vivos” wifi + LED mientras elegís
     updateWiFiStatus();
     updateArcade();
     flashTick();
 
-    // girar
     EncoderTurn t = encoderTurn();
     if (t == ENC_RIGHT) {
-      selected++;
-      if (selected >= (int)n) selected = 0;
-      drawUrlMenu("endpoints", items, n, selected);
+      selected = (selected + 1) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
     } else if (t == ENC_LEFT) {
-      selected--;
-      if (selected < 0) selected = (int)n - 1;
-      drawUrlMenu("endpoints", items, n, selected);
+      selected = (selected - 1 + n) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
     }
 
-    // confirmar con click
     if (encoderClick()) {
-      urlSetIndex((uint8_t)selected);
-
-      // feedback opcional
-      flashStart(displayOkColor(), "OK", 700);
-
-      // salir
+      urlSetIndex(selected);   // SET REAL
+      flashStart(displayOkColor(), "OK", 600);
       break;
     }
 
     delay(5);
   }
 
-  // Al salir, redibujamos UI normal
-  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
+  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                 WIFI_SSID, nullptr);
   updateWeight();
+  showReadyStatus();   // ← ahora queda fijo
 }
 
+// ================= UI NORMAL =================
 static void updateUiAndPeripherals() {
   static bool prevFlashing = false;
 
-  // 1) avanza el flash
   flashTick();
   bool flashingNow = isFlashing();
 
-  // 2) si terminó el flash JUSTO ahora -> redibujá todo
+  // terminó flash → redraw completo
   if (prevFlashing && !flashingNow) {
-    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
+    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                   WIFI_SSID, nullptr);
     updateWeight();
+    showReadyStatus();     // ← SIEMPRE
   }
 
   prevFlashing = flashingNow;
 
-  // 3) Mientras flashea: NO pises el body, pero mantené WiFi + LED vivos
+  // mientras flashea
   if (flashingNow) {
     updateWiFiStatus();
     updateArcade();
     return;
   }
 
-  // 4) Normal
+  // loop normal
   updateWiFiStatus();
   updateWeight();
+  showReadyStatus();       // ← ESTA ES LA CLAVE
   updateArcade();
 }

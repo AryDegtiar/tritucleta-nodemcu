@@ -1,20 +1,19 @@
 #pragma once
 #include <Arduino.h>
 
-// Inicializa storage (Preferences). Llamar 1 vez en setup().
 void urlStoreBegin();
 
-// Devuelve el índice actual (0..2)
+// índice actual: 0=LOCAL, 1=DEV, 2=PROD
 uint8_t urlGetIndex();
 
-// Devuelve la URL actual (http://...)
+// url real (http://...)
 const char* urlGet();
 
-// Etiqueta para UI ("localhost", "develop", "production")
+// label corto REAL según config
 const char* urlGetLabel(uint8_t idx);
 
-// Cambia y persiste el índice.
+// set y persistir
 void urlSetIndex(uint8_t idx);
 
-// Cantidad de endpoints disponibles.
+// cantidad de endpoints
 uint8_t urlCount();
