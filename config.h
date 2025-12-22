@@ -59,8 +59,15 @@
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define WIFI_RECHECK_MS          2000
 
-// ===== Backend =====
-#define POST_URL "http://192.168.0.22:8080/v1/weight"
+// ===== Backend (3 endpoints) =====
+// OJO: el POST actual soporta http:// (no https://)
+#define URL_LOCAL "http://172.30.135.167:8080/v1/weight"   // tu LAN “local”
+#define URL_DEV   "https://www.circoreciclado.com/trituapp/v1/weight"      // <- editá a tu gusto
+#define URL_PROD  "https://boceto-tritucleta-alealcontador.replit.app/v1/weight"     // <- editá a tu gusto
+
+// Combo para entrar al menú de endpoints (ENC_SW + PUL_CAL)
+#define URL_MENU_HOLD_MS  400
+
 #define HTTP_TIMEOUT_MS 5000
 
 // ===== POST samples HX711 =====

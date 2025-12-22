@@ -11,6 +11,7 @@ enum WifiUiState {
 
 void displayInit();
 void drawHeaderWiFi(WifiUiState state, const char* ssid, const char* ip);
+void drawUrlMenu(const char* title, const char* const* items, uint8_t count, int selected);
 void showWeight(float grams);
 void showStatus(const char* msg, uint16_t color);
 
