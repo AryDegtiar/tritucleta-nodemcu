@@ -3,6 +3,7 @@
 #include "wifi_helper.h"
 #include "hx711_helper.h"
 #include "display.h"
+#include "url_helper.h"
 
 #include <WiFi.h>
 
@@ -168,7 +169,7 @@ static int httpPostJsonWithBlink(const char* url, const String& jsonBody) {
   String host, path;
   uint16_t port;
   if (!parseHttpUrl(url, host, port, path)) {
-    Serial.println("[ARCADE] URL invalida");
+    Serial.println("[ARCADE] URL invalida (solo http://)");
     return -1;
   }
 
@@ -252,9 +253,6 @@ void updateArcade() {
   // si no hay WiFi, no aceptamos enviar
   if (!wifiIsConnected()) return;
 
-  // si estamos en flash, igual dejamos que el LED siga tickeando.
-  // (no bloqueamos el programa)
-
   // detectar tap
   if (!arcadePressedOnce()) return;
 
@@ -275,12 +273,14 @@ void updateArcade() {
   Serial.println(" g");
 
   String jsonBody = "{";
-  jsonBody += "\"evento\":\"PESO_TOMADO\",";
+  jsonBody += "\"event\":\"PESO_TOMADO\",";
   jsonBody += "\"weight\":" + String(weight, 1);
   jsonBody += "}";
 
   showStatus("Enviando...", COLOR_WARN);
-  int code = httpPostJsonWithBlink(POST_URL, jsonBody);
+
+  // ✅ URL dinámica según menú
+  int code = httpPostJsonWithBlink(urlGet(), jsonBody);
 
   Serial.print("[ARCADE] HTTP code = ");
   Serial.println(code);
@@ -300,6 +300,6 @@ void updateArcade() {
     // pantalla roja 5s (NO bloqueante)
     flashStart(displayErrColor(), "ERROR", 5000);
   }
-  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
 
+  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
 }

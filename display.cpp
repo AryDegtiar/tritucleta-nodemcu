@@ -118,7 +118,7 @@ void drawHeaderWiFi(WifiUiState state, const char* ssid, const char* ip) {
     tft.print(ssid);
   }
 
-  // IP opcional (si algún día la querés imprimir)
+  // IP opcional
   (void)ip;
 }
 
@@ -148,4 +148,38 @@ void showStatus(const char* msg, uint16_t color) {
   tft.setTextColor(color);
   tft.setCursor(3, HEADER_H);
   tft.print(msg);
+}
+
+// ==============================
+// Menu de Endpoints (URL)
+// ==============================
+void drawUrlMenu(const char* title, const char* const* items, uint8_t count, int selected) {
+  if (!title) title = "ENDPOINTS";
+  if (!items || count == 0) return;
+
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setTextWrap(false);
+
+  // Título
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_CYAN);
+  tft.setCursor(4, 2);
+  tft.print(title);
+
+  // Lista
+  const int startY = 26;
+  const int lineH  = 18; // size 2 aprox
+  for (uint8_t i = 0; i < count; i++) {
+    int y = startY + (int)i * lineH;
+    if (i == (uint8_t)selected) {
+      // highlight: fondo oscuro + texto verde
+      tft.fillRect(0, y - 2, 160, lineH, tft.color565(20, 20, 20));
+      tft.setTextColor(COLOR_OK);
+    } else {
+      tft.setTextColor(ST77XX_WHITE);
+    }
+    tft.setTextSize(2);
+    tft.setCursor(10, y);
+    tft.print(items[i]);
+  }
 }

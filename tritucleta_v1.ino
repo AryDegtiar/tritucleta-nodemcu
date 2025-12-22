@@ -4,10 +4,25 @@
 #include "encoder.h"
 #include "arcade.h"
 #include "wifi_helper.h"
+#include "url_helper.h"
+
+// ================= helpers =================
+static const char* endpointLabel() {
+  // Fuente única de verdad
+  return urlGetLabel(urlGetIndex());
+}
+
+static void showReadyStatus() {
+  char st[24];
+  snprintf(st, sizeof(st), "Listo %s", endpointLabel());
+  showStatus(st, COLOR_OK);
+}
 
 // --------- forward declarations ----------
 static void initHardware();
 static void initWiFi();
+static void handleUrlMenuCombo();
+static void enterUrlMenuBlocking();
 static void handleCalibrationButton();
 static void handleEncoderTurn();
 static void handleEncoderClick();
@@ -16,17 +31,21 @@ static void updateUiAndPeripherals();
 void setup() {
   Serial.begin(115200);
   initHardware();
+  urlStoreBegin();   // carga endpoint REAL
   initWiFi();
 }
 
 void loop() {
   encoderTick();
+
+  handleUrlMenuCombo();
   handleCalibrationButton();
   handleEncoderTurn();
   handleEncoderClick();
   updateUiAndPeripherals();
 }
 
+// ================= init =================
 static void initHardware() {
   displayInit();
   setupHX711();
@@ -40,8 +59,32 @@ static void initWiFi() {
   setupWiFi(WIFI_SSID, WIFI_PASS);
 }
 
-// Calibración con pulsación larga
+// ================= combo ENC + CAL =================
+static void handleUrlMenuCombo() {
+  static unsigned long startMs = 0;
+  static bool tracking = false;
+
+  bool enc = encoderPressed();
+  bool cal = (digitalRead(PUL_CAL) == LOW);
+
+  if (enc && cal) {
+    if (!tracking) {
+      tracking = true;
+      startMs = millis();
+    } else if (millis() - startMs >= URL_MENU_HOLD_MS) {
+      tracking = false;
+      enterUrlMenuBlocking();
+      while (encoderClick()) {}
+    }
+  } else {
+    tracking = false;
+  }
+}
+
+// ================= calibración =================
 static void handleCalibrationButton() {
+  if (encoderPressed()) return;
+
   static unsigned long pressStart = 0;
   static bool wasPressed = false;
 
@@ -58,9 +101,8 @@ static void handleCalibrationButton() {
   }
 
   if (pressed && wasPressed && (now - pressStart >= CAL_HOLD_MS)) {
-    wasPressed = false; // evita múltiples entradas
+    wasPressed = false;
     enterCalibrationMode();
-    Serial.println("[MAIN] Calibración: enter (long press)");
   }
 }
 
@@ -72,7 +114,7 @@ static void handleEncoderTurn() {
     case ENC_LEFT:
       if (isCalibrating()) calibrationAdjust(-1);
       break;
-    case ENC_NONE:
+    default:
       break;
   }
 }
@@ -81,47 +123,82 @@ static void handleEncoderClick() {
   if (!encoderClick()) return;
 
   if (isCalibrating()) {
-    if (calibrationConfirm()) {
-      Serial.println("[MAIN] Calibración OK");
-    } else {
-      Serial.println("[MAIN] Calibración FAIL");
-    }
+    calibrationConfirm();
   } else {
     doTare();
   }
 }
 
+// ================= menú endpoints =================
+static void enterUrlMenuBlocking() {
+  const uint8_t n = urlCount();
+  const char* items[3];
+
+  for (uint8_t i = 0; i < n; i++) {
+    items[i] = urlGetLabel(i);
+  }
+
+  int selected = urlGetIndex();
+
+  drawUrlMenu("ENDPOINT", items, n, selected);
+
+  while (true) {
+    encoderTick();
+    updateWiFiStatus();
+    updateArcade();
+    flashTick();
+
+    EncoderTurn t = encoderTurn();
+    if (t == ENC_RIGHT) {
+      selected = (selected + 1) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
+    } else if (t == ENC_LEFT) {
+      selected = (selected - 1 + n) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
+    }
+
+    if (encoderClick()) {
+      urlSetIndex(selected);   // SET REAL
+      flashStart(displayOkColor(), "OK", 600);
+      break;
+    }
+
+    delay(5);
+  }
+
+  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                 WIFI_SSID, nullptr);
+  updateWeight();
+  showReadyStatus();   // ← ahora queda fijo
+}
+
+// ================= UI NORMAL =================
 static void updateUiAndPeripherals() {
   static bool prevFlashing = false;
 
-  // 1) avanza el flash
   flashTick();
   bool flashingNow = isFlashing();
 
-  // 2) si terminó el flash JUSTO ahora -> redibujá todo
+  // terminó flash → redraw completo
   if (prevFlashing && !flashingNow) {
-    // header
-    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED, WIFI_SSID, nullptr);
-
-    // si tu updateWeight() redraw solo el body/peso, llamalo
+    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                   WIFI_SSID, nullptr);
     updateWeight();
-
-    // opcional: status “Listo”
-    // showStatus("Listo", COLOR_OK);
+    showReadyStatus();     // ← SIEMPRE
   }
 
   prevFlashing = flashingNow;
 
-  // 3) Mientras flashea: NO pises el body, pero mantené WiFi + LED vivos
+  // mientras flashea
   if (flashingNow) {
-    updateWiFiStatus(); // mantiene estado wifi interno (si lo necesitás)
-    updateArcade();     // mantiene ledTick()
+    updateWiFiStatus();
+    updateArcade();
     return;
   }
 
-  // 4) Normal
+  // loop normal
   updateWiFiStatus();
   updateWeight();
+  showReadyStatus();       // ← ESTA ES LA CLAVE
   updateArcade();
 }
-
