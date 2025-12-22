@@ -4,66 +4,117 @@
 #include "encoder.h"
 #include "arcade.h"
 #include "wifi_helper.h"
+#include "url_helper.h"
 
-// --------- forward declarations (helpers locales) ----------
+// ================= helpers =================
+static const char* endpointLabel() {
+  // Fuente única de verdad
+  return urlGetLabel(urlGetIndex());
+}
+
+static void showReadyStatus() {
+  char st[24];
+  snprintf(st, sizeof(st), "Listo %s", endpointLabel());
+  showStatus(st, COLOR_OK);
+}
+
+// --------- forward declarations ----------
 static void initHardware();
 static void initWiFi();
+static void handleUrlMenuCombo();
+static void enterUrlMenuBlocking();
 static void handleCalibrationButton();
 static void handleEncoderTurn();
 static void handleEncoderClick();
 static void updateUiAndPeripherals();
 
-// ==========================================================
 void setup() {
   Serial.begin(115200);
-  initHardware();   // TFT, HX711, encoder, arcade, botón CAL
-  initWiFi();       // UI "Conectando..." y conexión (no bloqueante)
+  initHardware();
+  urlStoreBegin();   // carga endpoint REAL
+  initWiFi();
 }
 
 void loop() {
-  encoderTick();              // API pasiva: lee y acumula eventos del encoder
-  handleCalibrationButton();  // botón físico de modo calibración
-  handleEncoderTurn();        // giro: ajusta CF si está calibrando
-  handleEncoderClick();       // click: confirma CF o hace TARE
+  encoderTick();
 
-  updateUiAndPeripherals();   // WiFi header, peso en pantalla, LED/botón
+  handleUrlMenuCombo();
+  handleCalibrationButton();
+  handleEncoderTurn();
+  handleEncoderClick();
+  updateUiAndPeripherals();
 }
 
-// ================== helpers privados ======================
-
+// ================= init =================
 static void initHardware() {
-  displayInit();                 // UI
-  setupHX711();                  // balanza
-  setupEncoder();                // encoder
-  setupArcade();                 // LED/botón arcade (opcional)
-  pinMode(PUL_CAL, INPUT_PULLUP);// botón calibración
+  displayInit();
+  setupHX711();
+  setupEncoder();
+  setupArcade();
+  pinMode(PUL_CAL, INPUT_PULLUP);
 }
 
 static void initWiFi() {
-  // Header inicial: “Conectando…”
   drawHeaderWiFi(WIFI_CONNECTING, WIFI_SSID, nullptr);
-  setupWiFi(WIFI_SSID, WIFI_PASS);  // si falla, header queda en rojo; seguimos igual
+  setupWiFi(WIFI_SSID, WIFI_PASS);
 }
 
+// ================= combo ENC + CAL =================
+static void handleUrlMenuCombo() {
+  static unsigned long startMs = 0;
+  static bool tracking = false;
+
+  bool enc = encoderPressed();
+  bool cal = (digitalRead(PUL_CAL) == LOW);
+
+  if (enc && cal) {
+    if (!tracking) {
+      tracking = true;
+      startMs = millis();
+    } else if (millis() - startMs >= URL_MENU_HOLD_MS) {
+      tracking = false;
+      enterUrlMenuBlocking();
+      while (encoderClick()) {}
+    }
+  } else {
+    tracking = false;
+  }
+}
+
+// ================= calibración =================
 static void handleCalibrationButton() {
-  static unsigned long lastCalPressMs = 0;
-  const unsigned long now = millis();
-  if (digitalRead(PUL_CAL) == LOW && (now - lastCalPressMs) >= PUL_DEBOUNCE_MS) {
-    lastCalPressMs = now;
+  if (encoderPressed()) return;
+
+  static unsigned long pressStart = 0;
+  static bool wasPressed = false;
+
+  bool pressed = (digitalRead(PUL_CAL) == LOW);
+  unsigned long now = millis();
+
+  if (pressed && !wasPressed) {
+    pressStart = now;
+    wasPressed = true;
+  }
+
+  if (!pressed && wasPressed) {
+    wasPressed = false;
+  }
+
+  if (pressed && wasPressed && (now - pressStart >= CAL_HOLD_MS)) {
+    wasPressed = false;
     enterCalibrationMode();
-    Serial.println("[MAIN] Calibración: enter");
   }
 }
 
 static void handleEncoderTurn() {
-  switch (encoderTurn()) {       // ENC_RIGHT / ENC_LEFT / ENC_NONE
+  switch (encoderTurn()) {
     case ENC_RIGHT:
-      if (isCalibrating()) calibrationAdjust(+10);
+      if (isCalibrating()) calibrationAdjust(+1);
       break;
     case ENC_LEFT:
-      if (isCalibrating()) calibrationAdjust(-10);
+      if (isCalibrating()) calibrationAdjust(-1);
       break;
-    case ENC_NONE:
+    default:
       break;
   }
 }
@@ -72,19 +123,82 @@ static void handleEncoderClick() {
   if (!encoderClick()) return;
 
   if (isCalibrating()) {
-    // Nota: mantener la firma bool calibrationConfirm() para evitar choques
-    if (calibrationConfirm()) {
-      Serial.println("[MAIN] Calibración OK");
-    } else {
-      Serial.println("[MAIN] Calibración FAIL");
-    }
+    calibrationConfirm();
   } else {
     doTare();
   }
 }
 
+// ================= menú endpoints =================
+static void enterUrlMenuBlocking() {
+  const uint8_t n = urlCount();
+  const char* items[3];
+
+  for (uint8_t i = 0; i < n; i++) {
+    items[i] = urlGetLabel(i);
+  }
+
+  int selected = urlGetIndex();
+
+  drawUrlMenu("ENDPOINT", items, n, selected);
+
+  while (true) {
+    encoderTick();
+    updateWiFiStatus();
+    updateArcade();
+    flashTick();
+
+    EncoderTurn t = encoderTurn();
+    if (t == ENC_RIGHT) {
+      selected = (selected + 1) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
+    } else if (t == ENC_LEFT) {
+      selected = (selected - 1 + n) % n;
+      drawUrlMenu("ENDPOINT", items, n, selected);
+    }
+
+    if (encoderClick()) {
+      urlSetIndex(selected);   // SET REAL
+      flashStart(displayOkColor(), "OK", 600);
+      break;
+    }
+
+    delay(5);
+  }
+
+  drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                 WIFI_SSID, nullptr);
+  updateWeight();
+  showReadyStatus();   // ← ahora queda fijo
+}
+
+// ================= UI NORMAL =================
 static void updateUiAndPeripherals() {
-  updateWiFiStatus();  // solo refresca header si cambió el estado; no bloquea
-  updateWeight();      // muestra el peso actual (online/offline)
-  updateArcade();      // LED/botón arcade (si lo usás)
+  static bool prevFlashing = false;
+
+  flashTick();
+  bool flashingNow = isFlashing();
+
+  // terminó flash → redraw completo
+  if (prevFlashing && !flashingNow) {
+    drawHeaderWiFi(wifiIsConnected() ? WIFI_CONNECTED : WIFI_DISCONNECTED,
+                   WIFI_SSID, nullptr);
+    updateWeight();
+    showReadyStatus();     // ← SIEMPRE
+  }
+
+  prevFlashing = flashingNow;
+
+  // mientras flashea
+  if (flashingNow) {
+    updateWiFiStatus();
+    updateArcade();
+    return;
+  }
+
+  // loop normal
+  updateWiFiStatus();
+  updateWeight();
+  showReadyStatus();       // ← ESTA ES LA CLAVE
+  updateArcade();
 }

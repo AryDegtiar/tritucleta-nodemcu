@@ -1,58 +1,82 @@
 #include "wifi_helper.h"
-#include "display.h"
 #include "config.h"
+#include "display.h"
+
 #include <WiFi.h>
+#include <time.h>
 
-#ifndef WIFI_CONNECT_TIMEOUT_MS
-  #define WIFI_CONNECT_TIMEOUT_MS 8000
-#endif
-#ifndef WIFI_RECHECK_MS
-  #define WIFI_RECHECK_MS 2000
-#endif
+static const char* g_ssid = nullptr;
+static const char* g_pass = nullptr;
 
-static bool g_wifiConnected = false;
-static unsigned long g_lastWiFiCheck = 0;
+static WifiUiState g_uiState = WIFI_DISCONNECTED;
+static unsigned long g_lastCheckMs = 0;
+static unsigned long g_lastConnectAttemptMs = 0;
 
-static void headerToConnected(const char* ssid) {
-  char ipbuf[24] = {0};
-  auto ip = WiFi.localIP();
-  snprintf(ipbuf, sizeof(ipbuf), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
-  drawHeaderWiFi(WIFI_CONNECTED, ssid, ipbuf);
+static void drawWifiHeaderOnce(WifiUiState newState) {
+  if (newState == WIFI_CONNECTED) {
+    IPAddress ip = WiFi.localIP();
+    String ipStr = ip.toString();
+    drawHeaderWiFi(newState, g_ssid, ipStr.c_str());
+  } else {
+    drawHeaderWiFi(newState, g_ssid, nullptr);
+  }
+  g_uiState = newState;
 }
-static void headerToDisconnected(const char* ssid) {
-  drawHeaderWiFi(WIFI_DISCONNECTED, ssid, nullptr);
+
+static void ensureWifiConnected() {
+  unsigned long now = millis();
+  wl_status_t st = WiFi.status();
+
+  if (st == WL_CONNECTED) {
+    if (g_uiState != WIFI_CONNECTED) {
+      drawWifiHeaderOnce(WIFI_CONNECTED);
+      Serial.println("[WIFI] Conectado");
+    }
+    return;
+  }
+
+  if (g_uiState == WIFI_CONNECTING) {
+    if (now - g_lastConnectAttemptMs > WIFI_CONNECT_TIMEOUT_MS) {
+      drawWifiHeaderOnce(WIFI_DISCONNECTED);
+      Serial.println("[WIFI] Timeout conectando, marcado como DISCONNECTED");
+    }
+    return;
+  }
+
+  if (now - g_lastCheckMs >= WIFI_RECHECK_MS) {
+    g_lastCheckMs = now;
+
+    Serial.println("[WIFI] Reintentando conexión...");
+    WiFi.disconnect(true);
+    WiFi.begin(g_ssid, g_pass);
+
+    g_lastConnectAttemptMs = now;
+    drawWifiHeaderOnce(WIFI_CONNECTING);
+  }
 }
 
 void setupWiFi(const char* ssid, const char* pass) {
-  drawHeaderWiFi(WIFI_CONNECTING, ssid, nullptr);
+  g_ssid = ssid;
+  g_pass = pass;
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, pass);
 
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - t0) < WIFI_CONNECT_TIMEOUT_MS) {
-    delay(200);
-  }
+  g_lastConnectAttemptMs = millis();
+  g_lastCheckMs = g_lastConnectAttemptMs;
 
-  if (WiFi.status() == WL_CONNECTED) {
-    g_wifiConnected = true;
-    headerToConnected(ssid);
-  } else {
-    g_wifiConnected = false;
-    headerToDisconnected(ssid);
-  }
+  drawWifiHeaderOnce(WIFI_CONNECTING);
+  Serial.print("[WIFI] Conectando a SSID: ");
+  Serial.println(ssid);
+
+  // Hora Argentina (UTC-3)
+  configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 }
 
 void updateWiFiStatus() {
-  unsigned long now = millis();
-  if (now - g_lastWiFiCheck < WIFI_RECHECK_MS) return;
-  g_lastWiFiCheck = now;
-
-  bool up = (WiFi.status() == WL_CONNECTED);
-  if (up != g_wifiConnected) {
-    g_wifiConnected = up;
-    if (up) headerToConnected(WIFI_SSID);
-    else { headerToDisconnected(WIFI_SSID); WiFi.reconnect(); }
-  }
+  ensureWifiConnected();
 }
 
-bool wifiIsConnected() { return g_wifiConnected; }
+bool wifiIsConnected() {
+  return (WiFi.status() == WL_CONNECTED);
+}
