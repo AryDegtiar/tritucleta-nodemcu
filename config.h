@@ -60,7 +60,6 @@
 #define WIFI_RECHECK_MS          2000
 
 // ===== Backend (3 endpoints) =====
-// OJO: el POST actual soporta http:// (no https://)
 #define URL_LOCAL "http://192.168.1.62:5000/api/weight/live"   
 #define URL_DEV   "https://boceto-tritucleta-alealcontador.replit.app/api/weight/live"    
 #define URL_PROD  "https://www.circoreciclado.com/api/weight/live"  
